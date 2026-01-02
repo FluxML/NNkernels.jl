@@ -304,7 +304,7 @@ end
 
 function test_flash_attention(kab)
     Random.seed!(0)
-    T = Float32
+    T = Float16
     E, QL, KL, H, B = 64, 2048, 2048, 4, 4
     i = 0
     for causal in (false, true), use_padmask in (false, true), use_pair in (false, true)
@@ -336,10 +336,10 @@ function test_flash_attention(kab)
             sum(NNop.flash_attention(q, k, v, pair; causal, kpad_mask=pm))
         end
 
-        @assert isapprox(∇1[1], ∇2[1]; atol=1e-3, rtol=1e-3)
-        @assert isapprox(∇1[2], ∇2[2]; atol=1e-3, rtol=1e-3)
-        @assert isapprox(∇1[3], ∇2[3]; atol=1e-3, rtol=1e-3)
-        !isnothing(pair) && @assert isapprox(∇1[4], ∇2[4]; atol=1e-3, rtol=1e-3)
+        @assert isapprox(∇1[1], ∇2[1]; atol=1e-2, rtol=1e-2)
+        @assert isapprox(∇1[2], ∇2[2]; atol=1e-2, rtol=1e-2)
+        @assert isapprox(∇1[3], ∇2[3]; atol=1e-2, rtol=1e-2)
+        !isnothing(pair) && @assert isapprox(∇1[4], ∇2[4]; atol=1e-2, rtol=1e-2)
 
         GC.gc(false)
         GC.gc(true)

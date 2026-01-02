@@ -1,5 +1,12 @@
+struct WMMATileConfig{BM, BK, BN, WM, WN, WK, aT, bT, cT} end
+
+# Register function for backends to define in extensions.
+function wmma!(c::AbstractMatrix, a::AbstractMatrix, b::AbstractMatrix, cfg, tidx, fn, mac) end
+
+supports_wmma(kab) = false
+
 @kernel unsafe_indices=true cpu=false inbounds=true function _flash_attention_fwd!(
-    cfg, cfg_out,
+    cfg::Type{C}, cfg_out,
     # outputs
     o::AbstractArray{T, 4}, ms::AbstractArray{T, 3}, ls::AbstractArray{T, 3},
     # inputs
@@ -8,8 +15,9 @@
     pair::Maybe{AbstractArray{T, 4}},
     kpad_mask::Maybe{AbstractMatrix{Bool}},
     ::Val{emb_dim}, ::Val{in_seq_bounds}, ::Val{causal},
-) where {T, emb_dim, in_seq_bounds, causal}
+) where {C, T, emb_dim, in_seq_bounds, causal}
     gsz = @groupsize()[1]
+    n_warps = gsz ÷ 32
     kv_seq_tiles = cld(size(k, 2), gsz)
     n_q_per_kv = size(q, 3) ÷ size(k, 3)
 
@@ -52,7 +60,9 @@
         @synchronize()
 
         # ---- scaled Q · Kᵀ ------------------------------------------------
-        mma!(s_shm, q_shm, k_shm, cfg, tidx, (res, c_shm, x, y) -> res * scale)
+        C <: WMMATileConfig ?
+            wmma!(s_shm, q_shm, k_shm, cfg, tidx, n_warps, d_frag -> d_frag .* scale, Val(false)) :
+            mma!(s_shm, q_shm, k_shm, cfg, tidx, (res, c_shm, x, y) -> res * scale)
         @synchronize()
 
         # ---- add pair features -------------------------------------------
@@ -112,7 +122,9 @@
         # ---- P · V --------------------------------------------------------
         sh_load_emb!(k_shm, v, k_offset, kv_head_idx, in_k, Val{false}())
         @synchronize()
-        mma!(o_shm, s_shm, k_shm, cfg_out, tidx, mma_acc_fn)
+        C <: WMMATileConfig ?
+            wmma!(o_shm, s_shm, k_shm, cfg_out, tidx, n_warps, identity, Val(true)) :
+            mma!(o_shm, s_shm, k_shm, cfg_out, tidx, mma_acc_fn)
         @synchronize()
 
         m_i = m_i_new
@@ -134,7 +146,7 @@ function _flash_attention(
     q::AbstractArray{T,4}, k::AbstractArray{T,4}, v::AbstractArray{T,4},
     pair::Union{Nothing,AbstractArray{T,4}} = nothing;
     causal::Bool, kpad_mask::Union{Nothing,AbstractMatrix{Bool}} = nothing,
-) where T
+) where T <: Union{Float16, Float32}
     QE, QL, QH, B = size(q)
     KE, KL, KH, KB = size(k)
 
@@ -153,14 +165,24 @@ function _flash_attention(
     in_bounds = QL % gsz == 0 && KL % gsz == 0
     scale     = T(inv(sqrt(QE)))
 
-    # mma tile configs ------------------------------------------------------
-    BM, BK, BN = gsz, QE, gsz
-    TM, TN     = flash_attention_mma_thread_cfg(gsz; BM, BN)
-    cfg        = FATileConfig{BM,BK,BN,TM,TN,false,false,false}
+    # Set WMMA or MMA tile configs.
+    if supports_wmma(kab) && sizeof(T) == 2
+        @assert QE % 16 == 0
+        WM, WK, WN = 16, 16, 16
 
-    BM, BK, BN = gsz, gsz, QE
-    TM, TN     = flash_attention_mma_thread_cfg(gsz; BM, BN)
-    cfg_out    = FATileConfig{BM,BK,BN,TM,TN,false,true,true}
+        BM, BK, BN = gsz, QE, gsz
+        cfg = WMMATileConfig{BM, BK, BN, WM, WK, WN, false, false, false}
+        BM, BK, BN = gsz, gsz, QE
+        cfg_out = WMMATileConfig{BM, BK, BN, WM, WK, WN, false, true, true}
+    else
+        BM, BK, BN = gsz, QE, gsz
+        TM, TN = flash_attention_mma_thread_cfg(gsz; BM, BN)
+        cfg = FATileConfig{BM, BK, BN, TM, TN, false, false, false}
+
+        BM, BK, BN = gsz, gsz, QE
+        TM, TN = flash_attention_mma_thread_cfg(gsz; BM, BN)
+        cfg_out = FATileConfig{BM, BK, BN, TM, TN, false, true, true}
+    end
 
     # ----------------------------------------------------------------------
     o  = similar(q)
@@ -170,9 +192,7 @@ function _flash_attention(
     _flash_attention_fwd!(kab, threads)(
         cfg, cfg_out,
         o, ms, ls, q, k, v, scale, pair, kpad_mask,
-        Val(QE), Val(in_bounds), Val(causal);   # flags
-        ndrange)
-
+        Val(QE), Val(in_bounds), Val(causal); ndrange)
     return o, ms, ls
 end
 
