@@ -1,5 +1,5 @@
 @kernel unsafe_indices=true cpu=false inbounds=true function _flash_attention_bwd!(
-    cfg, cfg_dv, cfg_dk, cfg_dq, cfg_ds,
+    cfg::Type{C}, cfg_dv, cfg_dk, cfg_dq, cfg_ds,
     dq::AbstractArray{T,4}, dk::AbstractArray{T,4}, dv::AbstractArray{T,4},
     dpair::AbstractArray{T,4},
     Δ::AbstractArray{T,4}, δ::AbstractArray{T,3},
@@ -9,8 +9,9 @@
     pair::Maybe{AbstractArray{T,4}},
     kpad_mask::Maybe{AbstractMatrix{Bool}},
     ::Val{emb_dim}, ::Val{in_seq_bounds}, ::Val{causal}, ::Val{is_gqa},
-) where {T, emb_dim, in_seq_bounds, causal, is_gqa}
+) where {C, T, emb_dim, in_seq_bounds, causal, is_gqa}
     gsz = @groupsize()[1]
+    n_warps = gsz ÷ 32
     q_seq_tiles = cld(size(q, 2), gsz)
     kv_seq_tiles = cld(size(k, 2), gsz)
     n_q_per_kv = size(q, 3) ÷ size(k, 3)
@@ -55,8 +56,9 @@
             @synchronize()
 
             # ------------- recompute raw scores -------------------------
-            mma!(s_shm, q_shm, k_shm, cfg, tidx,
-                (res,_,__,___) -> res * scale)
+            C <: WMMATileConfig ?
+                wmma!(s_shm, q_shm, k_shm, cfg, tidx, n_warps, d_frag -> d_frag .* scale, Val(false)) :
+                mma!(s_shm, q_shm, k_shm, cfg, tidx, (res, c_shm, x, y) -> res * scale)
             @synchronize()
 
             # ---- add pair logits so that soft-max matches forward ------
@@ -91,7 +93,9 @@
             @synchronize()
 
             # -------------------- dV ------------------------------------
-            mma!(d_shm, Δ_shm, s_shm, cfg_dv, tidx, mma_non_acc_fn)
+            C <: WMMATileConfig ?
+                wmma!(d_shm, Δ_shm, s_shm, cfg_dv, tidx, n_warps, identity, Val(false)) :
+                mma!(d_shm, Δ_shm, s_shm, cfg_dv, tidx, mma_non_acc_fn)
             @synchronize()
             in_dv = in_seq_bounds || tidx + lo_k ≤ size(dv, 2)
             if in_dv
@@ -107,16 +111,22 @@
             # -------------------- dS (back into s_shm) -------------------
             sh_load_emb!(d_shm, v, lo_k, kv_head_idx, in_dv, Val(false))
             @synchronize()
-            # TODO prefetch δ?
-            mma!(s_shm, Δ_shm, d_shm, cfg_ds, tidx,
-                 (res, out, x, y) -> begin
-                     d_i = if in_seq_bounds || x + lo_q ≤ size(δ, 1)
-                         @inbounds δ[x + lo_q, q_head_idx, gidx[2]]
-                     else
-                         zero(T)
-                     end
-                     out[x,y] * (res - d_i) * scale
-                 end)
+
+            s_shm_row = MVector{gsz, T}(undef)
+            @unroll for j in 1:gsz
+                s_shm_row[j] = s_shm[tidx, j]
+            end
+
+            C <: WMMATileConfig ?
+                wmma!(s_shm, Δ_shm, d_shm, cfg_ds, tidx, n_warps, identity, Val(false)) :
+                mma!(s_shm, Δ_shm, d_shm, cfg_ds, tidx, mma_non_acc_fn)
+            @synchronize()
+
+            d_i = (in_seq_bounds || tidx + lo_q ≤ size(δ, 1)) ?
+                δ[tidx + lo_q, q_head_idx, gidx[2]] : zero(T)
+            @unroll for j in 1:gsz
+                s_shm[tidx, j] = s_shm_row[j] * (s_shm[tidx, j] - d_i) * scale
+            end
             @synchronize()
 
             # -------------------- dpair ----------------------------------
@@ -131,7 +141,9 @@
                 end
             end
             # -------------------- dK ------------------------------------
-            mma!(d_shm, s_shm, q_shm, cfg_dk, tidx, mma_non_acc_fn)
+            C <: WMMATileConfig ?
+                wmma!(d_shm, s_shm, q_shm, cfg_dk, tidx, n_warps, identity, Val(false)) :
+                mma!(d_shm, s_shm, q_shm, cfg_dk, tidx, mma_non_acc_fn)
             @synchronize()
             if in_k_ok
                 @unroll for i in 1:emb_dim
@@ -147,7 +159,9 @@
             in_dq = in_seq_bounds || tidx + lo_q ≤ size(dq, 2)
             sh_load_emb!(d_shm, dq, lo_q, q_head_idx, in_dq, Val(false))
             @synchronize()
-            mma!(d_shm, s_shm, k_shm, cfg_dq, tidx, mma_acc_fn)
+            C <: WMMATileConfig ?
+                wmma!(d_shm, s_shm, k_shm, cfg_dq, tidx, n_warps, identity, Val(true)) :
+                mma!(d_shm, s_shm, k_shm, cfg_dq, tidx, mma_acc_fn)
             @synchronize()
             if in_dq
                 @unroll for i in 1:emb_dim
@@ -203,7 +217,7 @@ function ∇flash_attention(
     pair::Maybe{AbstractArray{T,4}} = nothing;
     causal::Bool,
     kpad_mask::Maybe{AbstractMatrix{Bool}} = nothing,
-) where T
+) where T <: Union{Float16, Float32}
     QE, QL, QH, B = size(q)
     KE, KL, KH, KB = size(k)
 
@@ -234,26 +248,40 @@ function ∇flash_attention(
     dk = KA.zeros(kab, T, size(k))
     dv = KA.zeros(kab, T, size(v))
     dp = isnothing(pair) ?
-        KA.allocate(kab, T, (0,0,0,0)) :   # harmless dummy
+        KA.allocate(kab, T, (0,0,0,0)) :
         KA.zeros(kab, T, size(pair))
 
     # ---------------- MMA configs (unchanged) ----------------------------
-    BM,BK,BN = gsz, QE, gsz
-    TM,TN    = flash_attention_mma_thread_cfg(gsz; BM, BN)
-    cfg      = FATileConfig{BM,BK,BN,TM,TN,false,false,false}
+    if supports_wmma(kab) && sizeof(T) == 2
+        WM, WK, WN = 16, 16, 16
 
-    BM,BK,BN = QE, gsz, gsz
-    TM,TN    = flash_attention_mma_thread_cfg(gsz; BM, BN)
-    cfg_dv   = FATileConfig{BM,BK,BN,TM,TN,false,false,false}
+        BM,BK,BN = gsz, QE, gsz
+        cfg = WMMATileConfig{BM, BK, BN, WM, WK, WN, false, false, false}
+        BM,BK,BN = QE, gsz, gsz
+        cfg_dv = WMMATileConfig{BM, BK, BN, WM, WK, WN, false, false, false}
+        BM,BK,BN = gsz, gsz, QE
+        cfg_dk = WMMATileConfig{BM, BK, BN, WM, WK, WN, true, false, true}
+        cfg_dq = WMMATileConfig{BM, BK, BN, WM, WK, WN, false, true, true}
+        BM,BK,BN = gsz, QE, gsz
+        cfg_ds = WMMATileConfig{BM, BK, BN, WM, WK, WN, true, false, false}
+    else
+        BM,BK,BN = gsz, QE, gsz
+        TM,TN = flash_attention_mma_thread_cfg(gsz; BM, BN)
+        cfg = FATileConfig{BM, BK, BN, TM, TN, false, false, false}
 
-    BM,BK,BN = gsz, gsz, QE
-    TM,TN    = flash_attention_mma_thread_cfg(gsz; BM, BN)
-    cfg_dk   = FATileConfig{BM,BK,BN,TM,TN,true,false,true}
-    cfg_dq   = FATileConfig{BM,BK,BN,TM,TN,false,true,true}
+        BM,BK,BN = QE, gsz, gsz
+        TM,TN = flash_attention_mma_thread_cfg(gsz; BM, BN)
+        cfg_dv = FATileConfig{BM, BK, BN, TM, TN, false, false, false}
 
-    BM,BK,BN = gsz, QE, gsz
-    TM,TN    = flash_attention_mma_thread_cfg(gsz; BM, BN)
-    cfg_ds   = FATileConfig{BM,BK,BN,TM,TN,true,false,false}
+        BM,BK,BN = gsz, gsz, QE
+        TM,TN = flash_attention_mma_thread_cfg(gsz; BM, BN)
+        cfg_dk = FATileConfig{BM, BK, BN, TM, TN, true, false, true}
+        cfg_dq = FATileConfig{BM, BK, BN, TM, TN, false, true, true}
+
+        BM,BK,BN = gsz, QE, gsz
+        TM,TN = flash_attention_mma_thread_cfg(gsz; BM, BN)
+        cfg_ds = FATileConfig{BM, BK, BN, TM, TN, true, false, false}
+    end
 
     # If Grouped-Query attention, use atomic accumulation in gradients.
     is_gqa = QH ÷ KH > 1

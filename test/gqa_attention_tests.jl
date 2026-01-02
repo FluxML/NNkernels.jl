@@ -10,7 +10,7 @@ import Zygote
 ), causal in (
     false, true,
 ), T in (
-    Float32,
+    Float32, Float16,
 ), E in (
     32, 64,
 ), L in (
@@ -27,10 +27,11 @@ import Zygote
     o2, ∇2 = Zygote.withgradient(q, k, v) do q, k, v
         sum(NNop.flash_attention(q, k, v; causal, kpad_mask=nothing))
     end
-    @test isapprox(o1, o2; atol=1e-3, rtol=1e-3)
-    @test isapprox(∇1[1], ∇2[1]; atol=1e-3, rtol=1e-3)
-    @test isapprox(∇1[2], ∇2[2]; atol=1e-3, rtol=1e-3)
-    @test isapprox(∇1[3], ∇2[3]; atol=1e-3, rtol=1e-3)
+    eps = sizeof(T) == 4 ? 1e-3 : 1e-1
+    @test isapprox(o1, o2; atol=eps, rtol=eps)
+    @test isapprox(∇1[1], ∇2[1]; atol=eps, rtol=eps)
+    @test isapprox(∇1[2], ∇2[2]; atol=eps, rtol=eps)
+    @test isapprox(∇1[3], ∇2[3]; atol=eps, rtol=eps)
 end
 
 end

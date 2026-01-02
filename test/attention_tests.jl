@@ -8,7 +8,7 @@ import Zygote
 ), use_pair in (
     false, true,
 ), T in (
-    Float32, # TODO more types
+    Float32, Float16,
 ), E in (
     16, 32, 64, # TODO test on higher if applicable
 ), QL in (
@@ -28,10 +28,7 @@ import Zygote
         kpad_mask[end-10:end, end] .= false
     end
 
-    pair = nothing
-    if use_pair
-        pair = Adapt.adapt(kab, randn(T, H, QL, KL, B))
-    end
+    pair = use_pair ? Adapt.adapt(kab, randn(T, H, QL, KL, B)) : nothing
 
     o1, ∇1 = Zygote.withgradient(q, k, v, pair) do q, k, v, pair
         sum(naive_attention(q, k, v, pair; causal, kpad_mask))
@@ -39,12 +36,14 @@ import Zygote
     o2, ∇2 = Zygote.withgradient(q, k, v, pair) do q, k, v, pair
         sum(NNop.flash_attention(q, k, v, pair; causal, kpad_mask))
     end
-    @test isapprox(o1, o2; atol=1e-3, rtol=1e-3)
-    @test isapprox(∇1[1], ∇2[1]; atol=1e-3, rtol=1e-3)
-    @test isapprox(∇1[2], ∇2[2]; atol=1e-3, rtol=1e-3)
-    @test isapprox(∇1[3], ∇2[3]; atol=1e-3, rtol=1e-3)
+
+    eps = sizeof(T) == 4 ? 1e-3 : 1e-1
+    @test isapprox(o1, o2; atol=eps, rtol=eps)
+    @test isapprox(∇1[1], ∇2[1]; atol=eps, rtol=eps)
+    @test isapprox(∇1[2], ∇2[2]; atol=eps, rtol=eps)
+    @test isapprox(∇1[3], ∇2[3]; atol=eps, rtol=eps)
     if !isnothing(pair)
-        @test isapprox(∇1[4], ∇2[4]; atol=1e-3, rtol=1e-3)
+        @test isapprox(∇1[4], ∇2[4]; atol=eps, rtol=eps)
     end
 end
 
