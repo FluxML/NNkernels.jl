@@ -59,7 +59,6 @@
             C <: WMMATileConfig ?
                 wmma!(s_shm, q_shm, k_shm, cfg, tidx, n_warps, d_frag -> d_frag .* scale, Val(false)) :
                 mma!(s_shm, q_shm, k_shm, cfg, tidx, (res, c_shm, x, y) -> res * scale)
-            # mma!(s_shm, q_shm, k_shm, cfg, tidx, (res,_,__,___) -> res * scale)
             @synchronize()
 
             # ---- add pair logits so that soft-max matches forward ------
