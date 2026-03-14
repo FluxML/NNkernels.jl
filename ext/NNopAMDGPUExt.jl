@@ -9,7 +9,13 @@ function NNop._shared_memory(::ROCBackend, device_id::Integer)
     return UInt64(AMDGPU.HIP.properties(dev).sharedMemPerBlock)
 end
 
-NNop.supports_wmma(::ROCBackend) = true
+# Only RDNA 3 for now.
+function NNop.supports_wmma(::ROCBackend)
+    _arch_str = first(split(AMDGPU.HIP.gcn_arch(AMDGPU.device()), ':'))
+    gfx = parse(Int, _arch_str[4:end])
+    is_rdna3 = 1100 ≤ gfx < 1200
+    return is_rdna3
+end
 
 Base.@propagate_inbounds function NNop.wmma!(
     c::AMDGPU.Device.ROCDeviceMatrix{T},
