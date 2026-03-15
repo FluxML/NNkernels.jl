@@ -31,9 +31,9 @@ Base.@propagate_inbounds function NNop.wmma!(
     b_ptr = pointer(b)
     c_ptr = pointer(c)
 
-    a_layout = aT ? WMMA.RowMajor() : WMMA.ColMajor()
-    b_layout = bT ? WMMA.RowMajor() : WMMA.ColMajor()
-    c_layout = cT ? WMMA.RowMajor() : WMMA.ColMajor()
+    a_layout = aT ? WMMA.RowMajor : WMMA.ColMajor
+    b_layout = bT ? WMMA.RowMajor : WMMA.ColMajor
+    c_layout = cT ? WMMA.RowMajor : WMMA.ColMajor
     a_stride = Int32(aT ? BK : BM)
     b_stride = Int32(bT ? BN : BK)
     c_stride = Int32(cT ? BN : BM)
