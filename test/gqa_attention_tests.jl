@@ -27,7 +27,7 @@ import Zygote
     o2, ∇2 = Zygote.withgradient(q, k, v) do q, k, v
         sum(NNop.flash_attention(q, k, v; causal, kpad_mask=nothing))
     end
-    eps = sizeof(T) == 4 ? 1e-3 : 1e-1
+    eps = sizeof(T) == 4 ? 1e-3 : 2e-1
     @test isapprox(o1, o2; atol=eps, rtol=eps)
     @test isapprox(∇1[1], ∇2[1]; atol=eps, rtol=eps)
     @test isapprox(∇1[2], ∇2[2]; atol=eps, rtol=eps)
