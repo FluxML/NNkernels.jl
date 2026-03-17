@@ -1,4 +1,4 @@
-# NNop.jl
+# NNkernels.jl
 
 <img src="assets/nnop-logo.svg" width="200"/>
 
@@ -36,9 +36,9 @@ q = ROCArray(rand(Float32, E, L, H, B))
 k = ROCArray(rand(Float32, E, L, H, B))
 v = ROCArray(rand(Float32, E, L, H, B))
 
-o = NNop.flash_attention(q, k, v; causal)
+o = NNkernels.flash_attention(q, k, v; causal)
 ∇ = Zygote.gradient(q, k, v) do q, k, v
-    sum(NNop.flash_attention(q, k, v; causal))
+    sum(NNkernels.flash_attention(q, k, v; causal))
 end
 ```
 
@@ -56,7 +56,7 @@ Implementation of [Online normalizer calculation for softmax](https://arxiv.org/
 
 ```julia
 x = ROCArray(rand(Float32, 8192, 1024))
-y = NNop.online_softmax(x)
+y = NNkernels.online_softmax(x)
 ```
 
 ## RMS Norm
@@ -64,9 +64,9 @@ y = NNop.online_softmax(x)
 ```julia
 x = ROCArray(rand(Float32, 1024, 1024))
 w = ROCArray(rand(Float32, 1024))
-y = NNop.rms_norm(x, w)
+y = NNkernels.rms_norm(x, w)
 ∇ = Zygote.gradient(x, w) do x, w
-    sum(NNop.rms_norm(x, w))
+    sum(NNkernels.rms_norm(x, w))
 end
 ```
 
@@ -76,9 +76,9 @@ end
 x = ROCArray(rand(Float32, 1024, 1024))
 w = ROCArray(rand(Float32, 1024))
 w = ROCArray(rand(Float32, 1024))
-y = NNop.layer_norm(x, w)
+y = NNkernels.layer_norm(x, w)
 ∇ = Zygote.gradient(x, w, b) do x, w, b
-    sum(NNop.layer_norm(x, w, b))
+    sum(NNkernels.layer_norm(x, w, b))
 end
 ```
 
@@ -88,7 +88,7 @@ end
 E, L, B = 16, 1024, 1
 QH, KH = 16, 16
 
-emb = NNop.LlamaRotaryEmbedding(E)
+emb = NNkernels.LlamaRotaryEmbedding(E)
 position_ids = reshape(collect(0f0:Float32(L) - 1f0), :, 1)
 position_ids = repeat(position_ids; inner=(1, B))
 
@@ -98,5 +98,5 @@ sin = Adapt.adapt(kab, sin)
 
 q = Adapt.adapt(kab, ones(Float32, (E, L, QH, B)))
 k = Adapt.adapt(kab, ones(Float32, (E, L, KH, B)))
-q, k = NNop.llama_rope(q, k; cos, sin)
+q, k = NNkernels.llama_rope(q, k; cos, sin)
 ```

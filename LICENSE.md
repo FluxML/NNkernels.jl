@@ -1,4 +1,4 @@
-The NNop.jl package is licensed under the MIT "Expat" License:
+The NNkernels.jl package is licensed under the MIT "Expat" License:
 
 Copyright 2025 Anton Smirnov
 

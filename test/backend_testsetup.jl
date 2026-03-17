@@ -2,10 +2,10 @@
 
 export kab
 
-if get(ENV, "NNOP_TEST_AMDGPU", "false") == "true"
+if get(ENV, "NNKERN_TEST_AMDGPU", "false") == "true"
     using AMDGPU
     kab = ROCBackend()
-elseif get(ENV, "NNOP_TEST_CUDA", "false") == "true"
+elseif get(ENV, "NNKERN_TEST_CUDA", "false") == "true"
     using CUDA
     kab = CUDABackend()
 else

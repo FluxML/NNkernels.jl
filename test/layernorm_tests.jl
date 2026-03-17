@@ -20,14 +20,14 @@ end
     b = Adapt.adapt(kab, rand(Float32, emb))
 
     y1 = naive_layer_norm(x, w, b)
-    y2 = NNop.layer_norm(x, w, b)
+    y2 = NNkernels.layer_norm(x, w, b)
     @test y1 ≈ y2
 
     ∇n = Zygote.gradient(x, w, b) do x, w, b
         sum(naive_layer_norm(x, w, b))
     end
     ∇f = Zygote.gradient(x, w, b) do x, w, b
-        sum(NNop.layer_norm(x, w, b))
+        sum(NNkernels.layer_norm(x, w, b))
     end
     @test isapprox(∇n[1], ∇f[1]; atol=1f-6, rtol=1f-6)
     @test isapprox(∇n[2], ∇f[2]; atol=1f-6, rtol=1f-6)

@@ -1,4 +1,4 @@
-using NNop
+using NNkernels
 using NNlib
 using NNlib: ⊠, make_causal_mask, apply_attn_mask
 using BenchmarkTools
@@ -7,7 +7,7 @@ using Random
 using GPUArrays
 
 import Adapt
-import NNop.KernelAbstractions as KA
+import NNkernels.KernelAbstractions as KA
 
 function naive_softmax(x; dims = 1)
     mx = maximum(x; dims)
@@ -17,7 +17,7 @@ end
 
 function att_padding_mask(kpadmask, other_dim; T = Float32)
     pm = T.(kpadmask)
-    return NNop.CRC.@ignore_derivatives log.(
+    return NNkernels.CRC.@ignore_derivatives log.(
         reshape(pm, size(pm,1), 1, 1, size(pm,2)) .*
         (similar(pm, 1, other_dim, 1, size(pm,2)) .= 1)
     )
@@ -74,14 +74,14 @@ function test_layer_norm(kab)
     b = Adapt.adapt(kab, rand(Float32, emb))
 
     y1 = naive_layer_norm(x, w, b)
-    y2 = NNop.layer_norm(x, w, b)
+    y2 = NNkernels.layer_norm(x, w, b)
     @assert isapprox(y1, y2; atol=1f-6, rtol=1f-6)
 
     ∇n = Zygote.gradient(x, w, b) do x, w, b
         sum(naive_layer_norm(x, w, b))
     end
     ∇f = Zygote.gradient(x, w, b) do x, w, b
-        sum(NNop.layer_norm(x, w, b))
+        sum(NNkernels.layer_norm(x, w, b))
     end
 
     @assert isapprox(∇n[1], ∇f[1]; atol=1f-6, rtol=1f-6)
@@ -100,7 +100,7 @@ function test_layer_norm(kab)
 
     println("Fused LayerNorm:")
     @btime GPUArrays.@cached $cache begin
-        NNop.layer_norm($x, $w, $b)
+        NNkernels.layer_norm($x, $w, $b)
         KA.synchronize($kab)
     end
     println(" - Peak memory usage: $(Base.format_bytes(sizeof(cache)))")
@@ -119,7 +119,7 @@ function test_layer_norm(kab)
     println("Fused LayerNorm fwd + bwd:")
     @btime GPUArrays.@cached $cache begin
         Zygote.gradient($x, $w, $b) do x, w, b
-            sum(NNop.layer_norm(x, w, b))
+            sum(NNkernels.layer_norm(x, w, b))
         end
         KA.synchronize($kab)
     end
@@ -134,14 +134,14 @@ function test_rms_norm(kab)
     w = Adapt.adapt(kab, rand(Float32, emb))
 
     y1 = naive_rms_norm(x, w; ϵ=1f-6)
-    y2 = NNop.rms_norm(x, w; ϵ=1f-6)
+    y2 = NNkernels.rms_norm(x, w; ϵ=1f-6)
     @assert y1 ≈ y2
 
     ∇n = Zygote.gradient(x, w) do x, w
         sum(naive_rms_norm(x, w; offset=1f0))
     end
     ∇f = Zygote.gradient(x, w) do x, w
-        sum(NNop.rms_norm(x, w; offset=1f0))
+        sum(NNkernels.rms_norm(x, w; offset=1f0))
     end
     @assert isapprox(∇n[1], ∇f[1]; atol=1f-6, rtol=1f-6)
     @assert isapprox(∇n[2], ∇f[2]; atol=1f-6, rtol=1f-6)
@@ -158,7 +158,7 @@ function test_rms_norm(kab)
 
     println("Fused RMS norm:")
     @btime GPUArrays.@cached $cache begin
-        NNop.rms_norm($x, $w)
+        NNkernels.rms_norm($x, $w)
         KA.synchronize($kab)
     end
     println(" - Peak memory usage: $(Base.format_bytes(sizeof(cache)))")
@@ -177,7 +177,7 @@ function test_rms_norm(kab)
     println("Fused RMS norm fwd + bwd:")
     @btime GPUArrays.@cached $cache begin
         Zygote.gradient($x, $w) do x, w
-            sum(NNop.rms_norm(x, w))
+            sum(NNkernels.rms_norm(x, w))
         end
         KA.synchronize($kab)
     end
@@ -188,7 +188,7 @@ end
 
 function test_llama_rope(kab)
     dim, n_heads, seq_len, batch = 64, 3, 1024, 4
-    emb = NNop.LlamaRotaryEmbedding(dim)
+    emb = NNkernels.LlamaRotaryEmbedding(dim)
 
     position_ids = reshape(collect(0f0:Float32(seq_len) - 1f0), :, 1)
     position_ids = repeat(position_ids; inner=(1, batch))
@@ -199,13 +199,13 @@ function test_llama_rope(kab)
     q = Adapt.adapt(kab, rand(Float32, (dim, seq_len, n_heads, batch)))
     k = Adapt.adapt(kab, rand(Float32, (dim, seq_len, n_heads, batch)))
 
-    q1, k1 = NNop.llama_rope(q, k; cos, sin)
+    q1, k1 = NNkernels.llama_rope(q, k; cos, sin)
     q2, k2 = naive_llama_rope(q, k; cos, sin)
     @assert q1 ≈ q2
     @assert k1 ≈ k2
 
     ∇1 = Zygote.gradient(q, k) do q, k
-        qr, kr = NNop.llama_rope(q, k; cos, sin)
+        qr, kr = NNkernels.llama_rope(q, k; cos, sin)
         sum(qr) + sum(kr)
     end
     ∇2 = Zygote.gradient(q, k) do q, k
@@ -230,7 +230,7 @@ function test_llama_rope(kab)
 
     println("Fused Llama RoPe FWD:")
     @btime GPUArrays.@cached $cache begin
-        NNop.llama_rope($q, $k; cos=$cos, sin=$sin)
+        NNkernels.llama_rope($q, $k; cos=$cos, sin=$sin)
         KA.synchronize($kab)
     end
     println(" - Peak memory usage: $(Base.format_bytes(sizeof(cache)))")
@@ -250,7 +250,7 @@ function test_llama_rope(kab)
     println("Fused Llama RoPE FWD + BWD:")
     @btime GPUArrays.@cached $cache begin
         Zygote.gradient($q, $k) do q, k
-            qr, kr = NNop.llama_rope(q, k; cos=$cos, sin=$sin)
+            qr, kr = NNkernels.llama_rope(q, k; cos=$cos, sin=$sin)
             sum(qr) + sum(kr)
         end
         KA.synchronize($kab)
@@ -264,7 +264,7 @@ function test_softmax(kab)
     for seq_len in (32, 33, 63, 255, 256, 512, 1024, 2048)
         x = Adapt.adapt(kab, rand(Float32, seq_len, 4))
         y1 = naive_softmax(x; dims=1)
-        y2 = NNop.online_softmax(x)
+        y2 = NNkernels.online_softmax(x)
         @assert y1 ≈ y2
 
         ∇1 = Zygote.gradient(x) do x
@@ -280,7 +280,7 @@ function test_softmax(kab)
     cache = GPUArrays.AllocCache()
 
     y1 = naive_softmax(x; dims=1)
-    y2 = NNop.online_softmax(x)
+    y2 = NNkernels.online_softmax(x)
     @assert y1 ≈ y2
 
     println("Naїve softmax:")
@@ -293,7 +293,7 @@ function test_softmax(kab)
 
     println("Online softmax:")
     @btime GPUArrays.@cached $cache begin
-        NNop.online_softmax($x)
+        NNkernels.online_softmax($x)
         KA.synchronize($kab)
     end
     println(" - Peak memory usage: $(Base.format_bytes(sizeof(cache)))")
@@ -326,14 +326,14 @@ function test_flash_attention(kab)
         end
 
         on = naive_attention(q, k, v, pair; causal, kpad_mask=pm)
-        o = NNop.flash_attention(q, k, v, pair; causal, kpad_mask=pm)
+        o = NNkernels.flash_attention(q, k, v, pair; causal, kpad_mask=pm)
         @assert on ≈ o
 
         ∇1 = Zygote.gradient(q, k, v, pair) do q, k, v, pair
             sum(naive_attention(q, k, v, pair; causal, kpad_mask=pm))
         end
         ∇2 = Zygote.gradient(q, k, v, pair) do q, k, v, pair
-            sum(NNop.flash_attention(q, k, v, pair; causal, kpad_mask=pm))
+            sum(NNkernels.flash_attention(q, k, v, pair; causal, kpad_mask=pm))
         end
 
         @assert isapprox(∇1[1], ∇2[1]; atol=1e-2, rtol=1e-2)
@@ -356,7 +356,7 @@ function test_flash_attention(kab)
 
         println("Flash attention FWD:")
         @btime GPUArrays.@cached $cache begin
-            NNop.flash_attention($q, $k, $v, $pair; causal=$causal, kpad_mask=$pm)
+            NNkernels.flash_attention($q, $k, $v, $pair; causal=$causal, kpad_mask=$pm)
             KA.synchronize($kab)
         end
         println(" - Peak memory usage: $(Base.format_bytes(sizeof(cache)))")
@@ -375,7 +375,7 @@ function test_flash_attention(kab)
         println("Flash attention FWD + BWD:")
         @btime GPUArrays.@cached $cache begin
             Zygote.gradient($q, $k, $v, $pair) do q, k, v, pair
-                sum(NNop.flash_attention(q, k, v, $pair; causal=$causal, kpad_mask=$pm))
+                sum(NNkernels.flash_attention(q, k, v, $pair; causal=$causal, kpad_mask=$pm))
             end
             KA.synchronize($kab)
         end

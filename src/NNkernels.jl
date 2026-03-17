@@ -1,4 +1,4 @@
-module NNop
+module NNkernels
 
 using KernelAbstractions
 using KernelAbstractions.Extras: @unroll

@@ -19,14 +19,14 @@ end
     w = Adapt.adapt(kab, rand(Float32, emb))
 
     y1 = naive_rms_norm(x, w; offset)
-    y2 = NNop.rms_norm(x, w; offset)
+    y2 = NNkernels.rms_norm(x, w; offset)
     @test y1 ≈ y2
 
     ∇n = Zygote.gradient(x, w) do x, w
         sum(naive_rms_norm(x, w; offset))
     end
     ∇f = Zygote.gradient(x, w) do x, w
-        sum(NNop.rms_norm(x, w; offset))
+        sum(NNkernels.rms_norm(x, w; offset))
     end
     @test isapprox(∇n[1], ∇f[1]; atol=1f-6, rtol=1f-6)
     @test isapprox(∇n[2], ∇f[2]; atol=1f-6, rtol=1f-6)

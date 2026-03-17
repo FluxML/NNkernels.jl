@@ -27,7 +27,7 @@ end
 )
     dim = 16
     batch = 1
-    emb = NNop.LlamaRotaryEmbedding(dim)
+    emb = NNkernels.LlamaRotaryEmbedding(dim)
 
     position_ids = reshape(collect(0f0:Float32(L) - 1f0), :, 1)
     position_ids = repeat(position_ids; inner=(1, batch))
@@ -38,13 +38,13 @@ end
     q = Adapt.adapt(kab, ones(Float32, (dim, L, QH, batch)))
     k = Adapt.adapt(kab, ones(Float32, (dim, L, KH, batch)))
 
-    q1, k1 = NNop.llama_rope(q, k; cos, sin)
+    q1, k1 = NNkernels.llama_rope(q, k; cos, sin)
     q2, k2 = naive_llama_rope(q, k; cos, sin)
     @test isapprox(q1, q2; atol=1f-6, rtol=1f-6)
     @test isapprox(k1, k2; atol=1f-6, rtol=1f-6)
 
     ∇1 = Zygote.gradient(q, k) do q, k
-        qr, kr = NNop.llama_rope(q, k; cos, sin)
+        qr, kr = NNkernels.llama_rope(q, k; cos, sin)
         sum(qr) + sum(kr)
     end
     ∇2 = Zygote.gradient(q, k) do q, k

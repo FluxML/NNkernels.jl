@@ -1,27 +1,27 @@
-module NNopAMDGPUExt
+module NNkernelsAMDGPUExt
 
 using AMDGPU
 using AMDGPU.Device: WMMA
-using NNop
+using NNkernels
 
-function NNop._shared_memory(::ROCBackend, device_id::Integer)
+function NNkernels._shared_memory(::ROCBackend, device_id::Integer)
     dev = AMDGPU.devices()[device_id]
     return UInt64(AMDGPU.HIP.properties(dev).sharedMemPerBlock)
 end
 
 # Only RDNA 3 for now.
-function NNop.supports_wmma(::ROCBackend)
+function NNkernels.supports_wmma(::ROCBackend)
     _arch_str = first(split(AMDGPU.HIP.gcn_arch(AMDGPU.device()), ':'))
     gfx = parse(Int, _arch_str[4:end])
     is_rdna3 = 1100 ≤ gfx < 1200
     return is_rdna3
 end
 
-Base.@propagate_inbounds function NNop.wmma!(
+Base.@propagate_inbounds function NNkernels.wmma!(
     c::AMDGPU.Device.ROCDeviceMatrix{T},
     a::AMDGPU.Device.ROCDeviceMatrix{T},
     b::AMDGPU.Device.ROCDeviceMatrix{T},
-    cfg::Type{NNop.WMMATileConfig{BM, BK, BN, WM, WN, WK, aT, bT, cT}},
+    cfg::Type{NNkernels.WMMATileConfig{BM, BK, BN, WM, WN, WK, aT, bT, cT}},
     tidx,
     n_warps,
     fn,

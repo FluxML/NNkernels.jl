@@ -34,7 +34,7 @@ import Zygote
         sum(naive_attention(q, k, v, pair; causal, kpad_mask))
     end
     o2, ∇2 = Zygote.withgradient(q, k, v, pair) do q, k, v, pair
-        sum(NNop.flash_attention(q, k, v, pair; causal, kpad_mask))
+        sum(NNkernels.flash_attention(q, k, v, pair; causal, kpad_mask))
     end
 
     eps = sizeof(T) == 4 ? 1e-3 : 2e-1

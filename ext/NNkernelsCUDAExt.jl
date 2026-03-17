@@ -1,20 +1,20 @@
-module NNopCUDAExt
+module NNkernelsCUDAExt
 
 using CUDA
-using NNop
+using NNkernels
 
-function NNop._shared_memory(::CUDABackend, device_id::Integer)
+function NNkernels._shared_memory(::CUDABackend, device_id::Integer)
     dev = collect(CUDA.devices())[device_id]
     return UInt64(CUDA.attribute(dev, CUDA.CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK))
 end
 
-NNop.supports_wmma(::CUDABackend) = true
+NNkernels.supports_wmma(::CUDABackend) = true
 
-Base.@propagate_inbounds function NNop.wmma!(
+Base.@propagate_inbounds function NNkernels.wmma!(
     c::CuDeviceMatrix{T},
     a::CuDeviceMatrix{T},
     b::CuDeviceMatrix{T},
-    cfg::Type{NNop.WMMATileConfig{BM, BK, BN, WM, WN, WK, aT, bT, cT}},
+    cfg::Type{NNkernels.WMMATileConfig{BM, BK, BN, WM, WN, WK, aT, bT, cT}},
     tidx,
     n_warps,
     fn,

@@ -16,14 +16,14 @@ end
 )
     x = Adapt.adapt(kab, rand(Float32, seq_len, 4))
     y1 = naive_softmax(x; dims=1)
-    y2 = NNop.online_softmax(x)
+    y2 = NNkernels.online_softmax(x)
     @test y1 ≈ y2
 
     ∇1 = Zygote.gradient(x) do x
         sum(naive_softmax(x))
     end
     ∇2 = Zygote.gradient(x) do x
-        sum(NNop.online_softmax(x))
+        sum(NNkernels.online_softmax(x))
     end
     @assert isapprox(∇1[1], ∇2[1]; atol=1f-6, rtol=1f-6)
 end

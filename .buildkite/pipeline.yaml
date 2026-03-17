@@ -15,7 +15,7 @@ steps:
     timeout_in_minutes: 20
     env:
       JULIA_NUM_THREADS: 4
-      NNOP_TEST_AMDGPU: true
+      NNKERN_TEST_AMDGPU: true
 
   # - label: "CUDA - Julia 1.12"
   #   plugins:
@@ -32,4 +32,4 @@ steps:
   #   timeout_in_minutes: 20
   #   env:
   #     JULIA_NUM_THREADS: 4
-  #     NNOP_TEST_CUDA: true
+  #     NNKERN_TEST_CUDA: true
