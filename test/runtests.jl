@@ -3,7 +3,7 @@ using NNkernels
 using Test
 using ReTestItems
 
-ENV["NNKERN_TEST_AMDGPU"] = true
+# ENV["NNKERN_TEST_AMDGPU"] = true
 # ENV["NNKERN_TEST_CUDA"] = true
 
 if get(ENV, "NNKERN_TEST_AMDGPU", "false") == "true"
