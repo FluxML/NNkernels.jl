@@ -1,8 +1,13 @@
-@testitem "Flash Grouped-Query Attention" setup=[TSCore, TSAttention] begin
+using Test
+using NNkernels
 
 import Adapt
 import Zygote
 
+include("setup/core.jl")
+include("setup/attention.jl")
+
+@testset "Flash Grouped-Query Attention" begin
 @testset "Grouped-Query Attention: QH=$QH, KVH=$KVH, causal=$causal, T=$T, E=$E, L=$L" for QH in (
     4, 6, 8,
 ), KVH in (
@@ -33,5 +38,4 @@ import Zygote
     @test isapprox(∇1[2], ∇2[2]; atol=eps, rtol=eps)
     @test isapprox(∇1[3], ∇2[3]; atol=eps, rtol=eps)
 end
-
 end

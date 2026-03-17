@@ -1,7 +1,10 @@
-@testitem "RoPE" setup=[TSCore] begin
+using Test
+using NNkernels
 
 import Adapt
 import Zygote
+
+include("setup/core.jl")
 
 function rotate_half(x)
     half_dim = size(x, 1) ÷ 2
@@ -18,6 +21,7 @@ function naive_llama_rope(q, k; cos, sin)
     return q, k
 end
 
+@testset "RoPE" begin
 @testset "Llama RoPE: L=$L, QH=$QH, KH=$KH" for L in (
     13, 255, 256, 257, 1024, 1025,
 ), QH in (
@@ -54,5 +58,4 @@ end
     @test isapprox(∇1[1], ∇2[1]; atol=1f-6, rtol=1f-6)
     @test isapprox(∇1[2], ∇2[2]; atol=1f-6, rtol=1f-6)
 end
-
 end

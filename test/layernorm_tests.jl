@@ -1,8 +1,11 @@
-@testitem "LayerNorm" setup=[TSCore] begin
+using Test
+using NNkernels
+using Statistics
 
 import Adapt
 import Zygote
-using Statistics
+
+include("setup/core.jl")
 
 function naive_layer_norm(x, w, b; ϵ::Float32 = 1f-6)
     μ = mean(x; dims=1)
@@ -10,6 +13,7 @@ function naive_layer_norm(x, w, b; ϵ::Float32 = 1f-6)
     (x .- μ) ./ sqrt.(σ² .+ ϵ) .* w .+ b
 end
 
+@testset "LayerNorm" begin
 @testset "LayerNorm norm: emb=$emb, n=$n" for emb in (
     15, 255, 256, 257, 511, 512, 513, 1024,
 ), n in (
@@ -33,5 +37,4 @@ end
     @test isapprox(∇n[2], ∇f[2]; atol=1f-6, rtol=1f-6)
     @test isapprox(∇n[3], ∇f[3]; atol=1f-6, rtol=1f-6)
 end
-
 end

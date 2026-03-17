@@ -1,7 +1,3 @@
-@testsetup module TSAttention
-
-export naive_softmax, att_padding_mask, naive_attention
-
 import ChainRulesCore as CRC
 
 using Einops
@@ -42,6 +38,4 @@ function naive_attention(q, k, v, pair = nothing; causal::Bool, kpad_mask::Union
         a = a .+ permutedims(pair, (3, 2, 1, 4)) #When it comes in as H-QL-KL-B
     end
     return v ⊠ naive_softmax(a; dims=1)
-end
-
 end

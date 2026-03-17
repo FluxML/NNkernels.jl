@@ -1,7 +1,10 @@
-@testitem "Softmax" setup=[TSCore] begin
+using Test
+using NNkernels
 
 import Adapt
 import Zygote
+
+include("setup/core.jl")
 
 function naive_softmax(x; dims = 1)
     mx = maximum(x; dims)
@@ -9,6 +12,7 @@ function naive_softmax(x; dims = 1)
     return tmp ./ sum(tmp; dims)
 end
 
+@testset "Softmax" begin
 @testset "Online Softmax: T=$T, seq_len=$seq_len" for T in (
     Float32, # TODO more types
 ), seq_len in (
@@ -27,5 +31,4 @@ end
     end
     @assert isapprox(∇1[1], ∇2[1]; atol=1f-6, rtol=1f-6)
 end
-
 end

@@ -1,8 +1,13 @@
-@testitem "Flash Attention" setup=[TSCore, TSAttention] begin
+using Test
+using NNkernels
 
 import Adapt
 import Zygote
 
+include("setup/core.jl")
+include("setup/attention.jl")
+
+@testset "Flash Attention" begin
 @testset "padmask=$use_padmask, pair=$use_pair, T=$T, E=$E, QL=$QL, KL=$KL" for use_padmask in (
     false, true,
 ), use_pair in (
@@ -46,5 +51,4 @@ import Zygote
         @test isapprox(∇1[4], ∇2[4]; atol=eps, rtol=eps)
     end
 end
-
 end
