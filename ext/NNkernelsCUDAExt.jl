@@ -8,7 +8,7 @@ function NNkernels._shared_memory(::CUDABackend, device_id::Integer)
     return UInt64(CUDA.attribute(dev, CUDA.CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK))
 end
 
-NNkernels.supports_wmma(::CUDABackend) = true
+NNkernels.WMMA.is_available(::CUDABackend) = true
 
 NNkernels.WMMA.conf(
     ::Type{<: CuDeviceMatrix}, ::Val{WM}, ::Val{WN}, ::Val{WK}, ::Type{T},
