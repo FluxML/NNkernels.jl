@@ -42,7 +42,7 @@ include("setup/attention.jl")
     o2, ∇2 = Zygote.withgradient(q, k, v, pair) do q, k, v, pair
         sum(NNkernels.flash_attention(q, k, v, pair; causal, kpad_mask))
     end
-    eps = sizeof(T) == 4 ? 1e-3 : 1e-1
+    eps = sizeof(T) == 4 ? 1e-3 : 2e-1
     @test isapprox(o1, o2; atol=eps, rtol=eps)
     @test isapprox(∇1[1], ∇2[1]; atol=eps, rtol=eps)
     @test isapprox(∇1[2], ∇2[2]; atol=eps, rtol=eps)

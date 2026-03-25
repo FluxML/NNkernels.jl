@@ -56,8 +56,8 @@
             @synchronize()
 
             # ------------- recompute raw scores -------------------------
-            C <: WMMATileConfig ?
-                wmma!(s_shm, q_shm, k_shm, cfg, tidx, n_warps, d_frag -> d_frag .* scale, Val(false)) :
+            C <: WMMA.TileConfig ?
+                WMMA.wmma!(s_shm, q_shm, k_shm, cfg, tidx, n_warps, d_frag -> d_frag .* scale, Val(false)) :
                 mma!(s_shm, q_shm, k_shm, cfg, tidx, (res, c_shm, x, y) -> res * scale)
             @synchronize()
 
@@ -93,8 +93,8 @@
             @synchronize()
 
             # -------------------- dV ------------------------------------
-            C <: WMMATileConfig ?
-                wmma!(d_shm, Δ_shm, s_shm, cfg_dv, tidx, n_warps, identity, Val(false)) :
+            C <: WMMA.TileConfig ?
+                WMMA.wmma!(d_shm, Δ_shm, s_shm, cfg_dv, tidx, n_warps, identity, Val(false)) :
                 mma!(d_shm, Δ_shm, s_shm, cfg_dv, tidx, mma_non_acc_fn)
             @synchronize()
             in_dv = in_seq_bounds || tidx + lo_k ≤ size(dv, 2)
@@ -117,8 +117,8 @@
                 s_shm_row[j] = s_shm[tidx, j]
             end
 
-            C <: WMMATileConfig ?
-                wmma!(s_shm, Δ_shm, d_shm, cfg_ds, tidx, n_warps, identity, Val(false)) :
+            C <: WMMA.TileConfig ?
+                WMMA.wmma!(s_shm, Δ_shm, d_shm, cfg_ds, tidx, n_warps, identity, Val(false)) :
                 mma!(s_shm, Δ_shm, d_shm, cfg_ds, tidx, mma_non_acc_fn)
             @synchronize()
 
@@ -141,8 +141,8 @@
                 end
             end
             # -------------------- dK ------------------------------------
-            C <: WMMATileConfig ?
-                wmma!(d_shm, s_shm, q_shm, cfg_dk, tidx, n_warps, identity, Val(false)) :
+            C <: WMMA.TileConfig ?
+                WMMA.wmma!(d_shm, s_shm, q_shm, cfg_dk, tidx, n_warps, identity, Val(false)) :
                 mma!(d_shm, s_shm, q_shm, cfg_dk, tidx, mma_non_acc_fn)
             @synchronize()
             if in_k_ok
@@ -159,8 +159,8 @@
             in_dq = in_seq_bounds || tidx + lo_q ≤ size(dq, 2)
             sh_load_emb!(d_shm, dq, lo_q, q_head_idx, in_dq, Val(false))
             @synchronize()
-            C <: WMMATileConfig ?
-                wmma!(d_shm, s_shm, k_shm, cfg_dq, tidx, n_warps, identity, Val(true)) :
+            C <: WMMA.TileConfig ?
+                WMMA.wmma!(d_shm, s_shm, k_shm, cfg_dq, tidx, n_warps, identity, Val(true)) :
                 mma!(d_shm, s_shm, k_shm, cfg_dq, tidx, mma_acc_fn)
             @synchronize()
             if in_dq
@@ -252,18 +252,18 @@ function ∇flash_attention(
         KA.zeros(kab, T, size(pair))
 
     # ---------------- MMA configs (unchanged) ----------------------------
-    if supports_wmma(kab) && sizeof(T) == 2
+    if WMMA.is_available(kab) && sizeof(T) == 2
         WM, WK, WN = 16, 16, 16
 
         BM,BK,BN = gsz, QE, gsz
-        cfg = WMMATileConfig{BM, BK, BN, WM, WK, WN, false, false, false}
+        cfg = WMMA.TileConfig{BM, BK, BN, WM, WK, WN, false, false, false}
         BM,BK,BN = QE, gsz, gsz
-        cfg_dv = WMMATileConfig{BM, BK, BN, WM, WK, WN, false, false, false}
+        cfg_dv = WMMA.TileConfig{BM, BK, BN, WM, WK, WN, false, false, false}
         BM,BK,BN = gsz, gsz, QE
-        cfg_dk = WMMATileConfig{BM, BK, BN, WM, WK, WN, true, false, true}
-        cfg_dq = WMMATileConfig{BM, BK, BN, WM, WK, WN, false, true, true}
+        cfg_dk = WMMA.TileConfig{BM, BK, BN, WM, WK, WN, true, false, true}
+        cfg_dq = WMMA.TileConfig{BM, BK, BN, WM, WK, WN, false, true, true}
         BM,BK,BN = gsz, QE, gsz
-        cfg_ds = WMMATileConfig{BM, BK, BN, WM, WK, WN, true, false, false}
+        cfg_ds = WMMA.TileConfig{BM, BK, BN, WM, WK, WN, true, false, false}
     else
         BM,BK,BN = gsz, QE, gsz
         TM,TN = flash_attention_mma_thread_cfg(gsz; BM, BN)

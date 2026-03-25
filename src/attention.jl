@@ -1,10 +1,3 @@
-struct WMMATileConfig{BM, BK, BN, WM, WN, WK, aT, bT, cT} end
-
-# Register function for backends to define in extensions.
-function wmma!(c::AbstractMatrix, a::AbstractMatrix, b::AbstractMatrix, cfg, tidx, fn, mac) end
-
-supports_wmma(kab) = false
-
 @kernel unsafe_indices=true cpu=false inbounds=true function _flash_attention_fwd!(
     cfg::Type{C}, cfg_out,
     # outputs
@@ -60,8 +53,8 @@ supports_wmma(kab) = false
         @synchronize()
 
         # ---- scaled Q · Kᵀ ------------------------------------------------
-        C <: WMMATileConfig ?
-            wmma!(s_shm, q_shm, k_shm, cfg, tidx, n_warps, d_frag -> d_frag .* scale, Val(false)) :
+        C <: WMMA.TileConfig ?
+            WMMA.wmma!(s_shm, q_shm, k_shm, cfg, tidx, n_warps, d_frag -> d_frag .* scale, Val(false)) :
             mma!(s_shm, q_shm, k_shm, cfg, tidx, (res, c_shm, x, y) -> res * scale)
         @synchronize()
 
@@ -122,8 +115,8 @@ supports_wmma(kab) = false
         # ---- P · V --------------------------------------------------------
         sh_load_emb!(k_shm, v, k_offset, kv_head_idx, in_k, Val{false}())
         @synchronize()
-        C <: WMMATileConfig ?
-            wmma!(o_shm, s_shm, k_shm, cfg_out, tidx, n_warps, identity, Val(true)) :
+        C <: WMMA.TileConfig ?
+            WMMA.wmma!(o_shm, s_shm, k_shm, cfg_out, tidx, n_warps, identity, Val(true)) :
             mma!(o_shm, s_shm, k_shm, cfg_out, tidx, mma_acc_fn)
         @synchronize()
 
@@ -166,14 +159,14 @@ function _flash_attention(
     scale     = T(inv(sqrt(QE)))
 
     # Set WMMA or MMA tile configs.
-    if supports_wmma(kab) && sizeof(T) == 2
+    if WMMA.is_available(kab) && sizeof(T) == 2
         @assert QE % 16 == 0
         WM, WK, WN = 16, 16, 16
 
         BM, BK, BN = gsz, QE, gsz
-        cfg = WMMATileConfig{BM, BK, BN, WM, WK, WN, false, false, false}
+        cfg = WMMA.TileConfig{BM, BK, BN, WM, WK, WN, false, false, false}
         BM, BK, BN = gsz, gsz, QE
-        cfg_out = WMMATileConfig{BM, BK, BN, WM, WK, WN, false, true, true}
+        cfg_out = WMMA.TileConfig{BM, BK, BN, WM, WK, WN, false, true, true}
     else
         BM, BK, BN = gsz, QE, gsz
         TM, TN = flash_attention_mma_thread_cfg(gsz; BM, BN)
