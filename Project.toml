@@ -21,7 +21,7 @@ NNkernelsCUDAExt = "CUDA"
 
 [compat]
 AMDGPU = "2.3"
-CUDA = "5"
+CUDA = "5, 6.0"
 ChainRulesCore = "1.25.1"
 KernelAbstractions = "0.9.34"
 LRUCache = "1.6.2"
